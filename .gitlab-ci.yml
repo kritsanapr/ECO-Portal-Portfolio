@@ -1,0 +1,55 @@
+stages:
+  - build
+  - deployment
+
+services:
+  - docker:dind
+
+build:
+  when: manual
+  only :
+    - dev
+    - uat
+    - pro
+  stage: build
+  image:
+    name: docker:stable
+  before_script:
+    - echo $CI_COMMIT_SHORT_SHA
+    - echo $CI_COMMIT_BRANCH
+    - apk add --update python3 py3-pip
+    - pip3 install awscli --upgrade
+    - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+    - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    - export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+    - aws --version
+    - docker --version
+    - aws sts get-caller-identity
+    - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+    - if [ "$CI_COMMIT_BRANCH" == "dev" ]; then REGISTRY=$REGISTRY_ALPHA; else echo skip; fi
+    - if [ "$CI_COMMIT_BRANCH" == "uat" ]; then REGISTRY=$REGISTRY_BETA; else echo skip; fi
+    - if [ "$CI_COMMIT_BRANCH" == "pro" ]; then REGISTRY=$REGISTRY_PRO; else echo skip; fi
+  script:
+    - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$REGISTRY:$CI_COMMIT_SHORT_SHA .
+    - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$REGISTRY:$CI_COMMIT_SHORT_SHA
+
+trigger_pipeline:
+  when: manual
+  only :
+    - dev
+    - uat
+    - pro
+  stage: deployment
+  before_script:
+    - if [ "$CI_COMMIT_BRANCH" == "dev" ]; then TOKEN_PIPELINE=$TOKEN_PIPELINE_ALPHA; TRIGGER_URL=$TRIGGER_URL_ALPHA; else echo skip; fi
+    - if [ "$CI_COMMIT_BRANCH" == "uat" ]; then TOKEN_PIPELINE=$TOKEN_PIPELINE_BETA; TRIGGER_URL=$TRIGGER_URL_BETA; else echo skip; fi
+    - if [ "$CI_COMMIT_BRANCH" == "pro" ]; then TOKEN_PIPELINE=$TOKEN_PIPELINE_PRO; TRIGGER_URL=$TRIGGER_URL_PRO; else echo skip; fi
+  script:
+    - "curl -X POST --fail \
+      -F token=$TOKEN_PIPELINE \
+      -F ref=master \
+      -F variables[TAG]=$CI_COMMIT_SHORT_SHA \
+      -F variables[REPOSITORY_URL]=$CI_REPOSITORY_URL \
+      -F variables[PROJECT_NAME]=$CI_PROJECT_NAME \
+      $TRIGGER_URL"
+ 

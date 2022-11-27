@@ -1,0 +1,16 @@
+version: '3'
+services:
+  web:
+    build: .
+    ports:
+      - "8081:80"
+    volumes:
+      - .:/var/www:rw,cached
+      - /var/www
+      - /var/www/html/vendor
+      - /var/www/html/New/system/vendor
+      - /var/www/html/config
+      - /var/www/html/module/Application/view
+    env_file:
+      - .env
+    # restart: always
